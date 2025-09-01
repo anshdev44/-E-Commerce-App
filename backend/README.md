@@ -27,3 +27,4 @@ Copy `.env.example` to `.env` and set your secret key, algorithm, and token expi
 - Uses SQLite (`users.db`) for storage.
 - Passwords are hashed with bcrypt.
 - Returns JWT tokens on signup and login.
+

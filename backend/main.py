@@ -34,10 +34,10 @@ except Exception as e:
 
 app = FastAPI()
 
-# Add CORS middleware
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:64246"],
+    allow_origins=["http://localhost:64246", "http://localhost:8000", "http://127.0.0.1:8000", "http://10.0.2.2:8000", "http://localhost:49887", "http://127.0.0.1:49887"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,13 +73,13 @@ def read_root():
 
 @app.get("/health")
 def health_check():
-    if client and client.admin.command('ping'):
+    if client is not None and client.admin.command('ping'):
         return {"status": "healthy", "database": "MongoDB connected"}
     return {"status": "unhealthy", "database": "MongoDB disconnected"}
 
 @app.post("/signup", response_model=Token)
 def signup(user: UserCreate):
-    if not users_collection:
+    if users_collection is None:
         raise HTTPException(status_code=500, detail="Database connection failed")
     
     # Check if user already exists
@@ -107,7 +107,7 @@ def signup(user: UserCreate):
 
 @app.post("/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    if not users_collection:
+    if users_collection is None:
         raise HTTPException(status_code=500, detail="Database connection failed")
     
     # Find user by email
@@ -121,10 +121,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 @app.get("/users")
 def get_users():
-    if not users_collection:
+    if users_collection is None:
         raise HTTPException(status_code=500, detail="Database connection failed")
     
-    users = list(users_collection.find({}, {"hashed_password": 0}))  # Exclude passwords
+    users = list(users_collection.find({}, {"hashed_password": 0})) 
     return {"users": users, "count": len(users)}
 
 if __name__ == "__main__":

@@ -63,13 +63,31 @@ class _LoginPageState extends State<LoginPage> {
   void _login() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
-      // TODO: Connect to backend
-      await Future.delayed(const Duration(seconds: 1));
-      setState(() => _isLoading = false);
-      // TODO: Handle login result
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Login attempted (backend not connected)')),
-      );
+      try {
+        final response = await http.post(
+          Uri.parse('${getBackendUrl()}/login'),
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: 'username=${Uri.encodeComponent(_emailController.text.trim())}&password=${Uri.encodeComponent(_passwordController.text)}',
+        );
+        setState(() => _isLoading = false);
+        if (response.statusCode == 200) {
+          final token = jsonDecode(response.body);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Login successful!')),
+          );
+          // TODO: Store token and navigate to main app
+        } else {
+          final error = jsonDecode(response.body);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error['detail'] ?? 'Login failed')),
+          );
+        }
+      } catch (e) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
     }
   }
 
