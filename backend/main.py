@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from jose import JWTError, jwt
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 import os
@@ -13,17 +13,17 @@ SECRET_KEY = "your-secret-key"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-# MongoDB connection
+
 MONGO_URL = "mongodb://localhost:27017"
 DATABASE_NAME = "e-commerce-app"
 COLLECTION_NAME = "users"
 
-# Initialize MongoDB client
+
 try:
     client = MongoClient(MONGO_URL)
     db = client[DATABASE_NAME]
     users_collection = db[COLLECTION_NAME]
-    # Test connection
+   
     client.admin.command('ping')
     print("MongoDB connection successful!")
 except Exception as e:
@@ -37,7 +37,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:64246", "http://localhost:8000", "http://127.0.0.1:8000", "http://10.0.2.2:8000", "http://localhost:49887", "http://127.0.0.1:49887"],
+    allow_origins=["http://localhost:56892", "http://localhost:8000", "http://127.0.0.1:8000", "http://10.0.2.2:8000", "http://localhost:49887", "http://127.0.0.1:49887"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,6 +67,28 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
+# Product Schema
+class Product(BaseModel):
+    name: str
+    description: Optional[str] = None
+    price: float
+    category: Optional[str] = None
+    in_stock: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    category: Optional[str] = None
+    in_stock: Optional[int] = None
+    updated_at: Optional[datetime] = None
+
+PRODUCTS_COLLECTION_NAME = "products"
+products_collection = db[PRODUCTS_COLLECTION_NAME] if db is not None else None
+
+
 @app.get("/")
 def read_root():
     return {"message": "FastAPI Backend with MongoDB is running!"}
@@ -82,12 +104,12 @@ def signup(user: UserCreate):
     if users_collection is None:
         raise HTTPException(status_code=500, detail="Database connection failed")
     
-    # Check if user already exists
+    
     existing_user = users_collection.find_one({"email": user.email})
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    # Create new user document
+    
     user_doc = {
         "username": user.username,
         "email": user.email,
@@ -96,7 +118,7 @@ def signup(user: UserCreate):
         "updated_at": datetime.utcnow()
     }
     
-    # Insert user into MongoDB
+   
     result = users_collection.insert_one(user_doc)
     
     if result.inserted_id:
@@ -110,7 +132,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     if users_collection is None:
         raise HTTPException(status_code=500, detail="Database connection failed")
     
-    # Find user by email
+    
     user = users_collection.find_one({"email": form_data.username})
     
     if not user or not verify_password(form_data.password, user["hashed_password"]):
@@ -126,6 +148,93 @@ def get_users():
     
     users = list(users_collection.find({}, {"hashed_password": 0})) 
     return {"users": users, "count": len(users)}
+
+@app.post("/products", response_model=dict)
+def create_product(product: Product):
+    if products_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    now = datetime.utcnow()
+    product_dict = product.dict()
+    product_dict["created_at"] = now
+    product_dict["updated_at"] = now
+    result = products_collection.insert_one(product_dict)
+    if result.inserted_id:
+        product_dict["_id"] = str(result.inserted_id)
+        return {"product": product_dict}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to create product")
+
+@app.get("/products", response_model=dict)
+def list_products(skip: int = 0, limit: int = 20):
+    if products_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    products = list(products_collection.find().skip(skip).limit(limit))
+    for p in products:
+        p["_id"] = str(p["_id"])
+    return {"products": products, "count": len(products)}
+
+@app.get("/products/search", response_model=dict)
+def search_products(
+    name: Optional[str] = None,
+    category: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    skip: int = 0,
+    limit: int = 20
+):
+    if products_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    query = {}
+    if name:
+        query["name"] = {"$regex": name, "$options": "i"}
+    if category:
+        query["category"] = category
+    if min_price is not None or max_price is not None:
+        price_query = {}
+        if min_price is not None:
+            price_query["$gte"] = min_price
+        if max_price is not None:
+            price_query["$lte"] = max_price
+        query["price"] = price_query
+    products = list(products_collection.find(query).skip(skip).limit(limit))
+    for p in products:
+        p["_id"] = str(p["_id"])
+    return {"products": products, "count": len(products)}
+
+@app.get("/products/{product_id}", response_model=dict)
+def get_product(product_id: str):
+    if products_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    from bson import ObjectId
+    product = products_collection.find_one({"_id": ObjectId(product_id)})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    product["_id"] = str(product["_id"])
+    return {"product": product}
+
+@app.put("/products/{product_id}", response_model=dict)
+def update_product(product_id: str, product: ProductUpdate):
+    if products_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    from bson import ObjectId
+    update_data = {k: v for k, v in product.dict().items() if v is not None}
+    update_data["updated_at"] = datetime.utcnow()
+    result = products_collection.update_one({"_id": ObjectId(product_id)}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Product not found")
+    updated_product = products_collection.find_one({"_id": ObjectId(product_id)})
+    updated_product["_id"] = str(updated_product["_id"])
+    return {"product": updated_product}
+
+@app.delete("/products/{product_id}", response_model=dict)
+def delete_product(product_id: str):
+    if products_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    from bson import ObjectId
+    result = products_collection.delete_one({"_id": ObjectId(product_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return {"message": "Product deleted"}
 
 if __name__ == "__main__":
     import uvicorn
