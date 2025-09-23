@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io' show Platform;
 
-// Product base class
+
 class Product {
   final String id;
   final String name;
@@ -12,6 +12,7 @@ class Product {
   final double price;
   final String category;
   final int inStock;
+  final String imageUrl; 
 
   Product({
     required this.id,
@@ -20,6 +21,7 @@ class Product {
     required this.price,
     required this.category,
     required this.inStock,
+    required this.imageUrl, 
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -30,11 +32,11 @@ class Product {
       price: (json['price'] ?? 0).toDouble(),
       category: json['category'] ?? '',
       inStock: json['in_stock'] ?? 0,
+      imageUrl: json['image_url'] ?? '', 
     );
   }
 }
 
-// Example of inheritance: ElectronicsProduct extends Product
 class ElectronicsProduct extends Product {
   final String brand;
   final String model;
@@ -46,6 +48,7 @@ class ElectronicsProduct extends Product {
     required double price,
     required String category,
     required int inStock,
+    required String imageUrl, 
     required this.brand,
     required this.model,
   }) : super(
@@ -55,6 +58,7 @@ class ElectronicsProduct extends Product {
           price: price,
           category: category,
           inStock: inStock,
+          imageUrl: imageUrl, 
         );
 
   factory ElectronicsProduct.fromJson(Map<String, dynamic> json) {
@@ -65,6 +69,7 @@ class ElectronicsProduct extends Product {
       price: (json['price'] ?? 0).toDouble(),
       category: json['category'] ?? '',
       inStock: json['in_stock'] ?? 0,
+      imageUrl: json['image_url'] ?? '', 
       brand: json['brand'] ?? '',
       model: json['model'] ?? '',
     );
@@ -98,7 +103,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// ProductCard widget
+
 class ProductCard extends StatelessWidget {
   final Product product;
   final VoidCallback? onTap;
@@ -117,11 +122,23 @@ class ProductCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (product.imageUrl.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    product.imageUrl,
+                    height: 100,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, size: 80, color: Colors.grey),
+                  ),
+                ),
+              const SizedBox(height: 8),
               Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               const SizedBox(height: 8),
               Text(product.description, maxLines: 2, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 8),
-              Text('Category: ${product.category}'),
+              Text('Category: 0{product.category}'),
               const SizedBox(height: 8),
               Text('Price: ₹${product.price.toStringAsFixed(2)}', style: const TextStyle(color: Colors.blue)),
               const SizedBox(height: 8),
@@ -134,7 +151,7 @@ class ProductCard extends StatelessWidget {
   }
 }
 
-// ProductCatalog widget (Grid/List of ProductCards)
+
 class ProductCatalog extends StatelessWidget {
   final List<Product> products;
   final void Function(Product)? onProductTap;
@@ -514,7 +531,7 @@ class _SignupPageState extends State<SignupPage> {
   }
 }
 
-// Product List Page
+
 class ProductListPage extends StatefulWidget {
   const ProductListPage({Key? key}) : super(key: key);
 
@@ -638,6 +655,34 @@ class _ProductListPageState extends State<ProductListPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Products')),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            const DrawerHeader(
+              decoration: BoxDecoration(
+                color: Colors.blue,
+              ),
+              child: Text('Menu', style: TextStyle(color: Colors.white, fontSize: 24)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.home),
+              title: const Text('Home'),
+              onTap: () {},
+            ),
+            ListTile(
+              leading: const Icon(Icons.login),
+              title: const Text('Login'),
+              onTap: () {}, 
+            ),
+            ListTile(
+              leading: const Icon(Icons.more_horiz),
+              title: const Text('More'),
+              onTap: () {}, 
+            ),
+          ],
+        ),
+      ),
       body: Column(
         children: [
           Padding(
@@ -664,7 +709,7 @@ class _ProductListPageState extends State<ProductListPage> {
   }
 }
 
-// Product Detail Page
+
 class ProductDetailPage extends StatelessWidget {
   final Product product;
   const ProductDetailPage({Key? key, required this.product}) : super(key: key);
@@ -693,6 +738,50 @@ class ProductDetailPage extends StatelessWidget {
                 Text('Price: ₹${product.price.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, color: Colors.blue)),
                 const SizedBox(height: 16),
                 Text('In Stock: ${product.inStock}', style: const TextStyle(fontSize: 16)),
+                const SizedBox(height: 32),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        // TODO: Implement buy logic
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Buy Now clicked!')),
+                        );
+                      },
+                      icon: const Icon(Icons.shopping_bag),
+                      label: const Text('Buy Now'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        // TODO: Implement add to cart logic
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Added to cart!')),
+                        );
+                      },
+                      icon: const Icon(Icons.add_shopping_cart),
+                      label: const Text('Add to Cart'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () {
+                        // TODO: Implement add to wishlist logic
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Added to wishlist!')),
+                        );
+                      },
+                      icon: const Icon(Icons.favorite_border, color: Colors.pink, size: 32),
+                      tooltip: 'Add to Wishlist',
+                    ),
+                  ],
+                ),
               ],
             ),
           ),

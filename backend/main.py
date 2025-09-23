@@ -37,7 +37,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:56892", "http://localhost:8000", "http://127.0.0.1:8000", "http://10.0.2.2:8000", "http://localhost:49887", "http://127.0.0.1:49887"],
+    allow_origins=["http://localhost:55204", "http://localhost:8000", "http://127.0.0.1:8000", "http://10.0.2.2:8000", "http://localhost:49887", "http://127.0.0.1:49887"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,13 +67,14 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
-# Product Schema
+
 class Product(BaseModel):
     name: str
     description: Optional[str] = None
     price: float
     category: Optional[str] = None
     in_stock: int
+    image_url: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -83,10 +84,102 @@ class ProductUpdate(BaseModel):
     price: Optional[float] = None
     category: Optional[str] = None
     in_stock: Optional[int] = None
+    image_url: Optional[str] = None
     updated_at: Optional[datetime] = None
 
 PRODUCTS_COLLECTION_NAME = "products"
 products_collection = db[PRODUCTS_COLLECTION_NAME] if db is not None else None
+
+
+def insert_sample_products():
+    if products_collection is None:
+        return
+    if products_collection.count_documents({}) == 0:
+        sample_products = [
+            {
+                "name": "Wireless Mouse",
+                "description": "A smooth and responsive wireless mouse.",
+                "price": 19.99,
+                "category": "Electronics",
+                "in_stock": 50,
+                "image_url": "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=400&q=80",
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            },
+            {
+                "name": "Bluetooth Headphones",
+                "description": "Noise-cancelling over-ear headphones.",
+                "price": 59.99,
+                "category": "Electronics",
+                "in_stock": 30,
+                "image_url": "https://images.unsplash.com/photo-1511367461989-f85a21fda167?auto=format&fit=crop&w=400&q=80",
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            },
+            {
+                "name": "Coffee Mug",
+                "description": "Ceramic mug for hot beverages.",
+                "price": 7.99,
+                "category": "Kitchen",
+                "in_stock": 100,
+                "image_url": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=400&q=80",
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            },
+            {
+                "name": "Yoga Mat",
+                "description": "Non-slip yoga mat for all types of exercise.",
+                "price": 25.99,
+                "category": "Sports",
+                "in_stock": 40,
+                "image_url": "https://images.unsplash.com/photo-1519864600265-abb23847ef2c?auto=format&fit=crop&w=400&q=80",
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            },
+            {
+                "name": "Classic Novel",
+                "description": "A timeless piece of literature.",
+                "price": 12.49,
+                "category": "Books",
+                "in_stock": 60,
+                "image_url": "https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=400&q=80",
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            },
+            {
+                "name": "T-shirt",
+                "description": "100% cotton unisex t-shirt.",
+                "price": 9.99,
+                "category": "Clothing",
+                "in_stock": 80,
+                "image_url": "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?auto=format&fit=crop&w=400&q=80",
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            },
+            {
+                "name": "Building Blocks Set",
+                "description": "Creative toy blocks for kids.",
+                "price": 29.99,
+                "category": "Toys",
+                "in_stock": 35,
+                "image_url": "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=400&q=80",
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            },
+            {
+                "name": "Face Moisturizer",
+                "description": "Hydrating daily face cream.",
+                "price": 15.99,
+                "category": "Beauty",
+                "in_stock": 70,
+                "image_url": "https://images.unsplash.com/photo-1515378791036-0648a3ef77b2?auto=format&fit=crop&w=400&q=80",
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            },
+        ]
+        products_collection.insert_many(sample_products)
+
+insert_sample_products()
 
 
 @app.get("/")
