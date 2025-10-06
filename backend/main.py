@@ -1,10 +1,10 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Body
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from jose import JWTError, jwt
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 import os
@@ -37,7 +37,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:55204", "http://localhost:8000", "http://127.0.0.1:8000", "http://10.0.2.2:8000", "http://localhost:49887", "http://127.0.0.1:49887"],
+    allow_origins=["http://localhost:56493", "http://localhost:8000", "http://127.0.0.1:8000", "http://10.0.2.2:8000", "http://localhost:49887", "http://127.0.0.1:49887"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -182,6 +182,216 @@ def insert_sample_products():
 insert_sample_products()
 
 
+# --- User-specific Cart and Wishlist (MongoDB) ---
+CART_COLLECTION = "cart"
+WISHLIST_COLLECTION = "wishlist"
+cart_collection = db[CART_COLLECTION] if db is not None else None
+wishlist_collection = db[WISHLIST_COLLECTION] if db is not None else None
+
+class CartItem(BaseModel):
+    product_id: str
+    quantity: int
+
+class Cart(BaseModel):
+    user_email: str
+    items: list[CartItem] = []
+
+class Wishlist(BaseModel):
+    user_email: str
+    product_ids: list[str] = []
+
+# --- Discount Strategy OOP ---
+class DiscountStrategy:
+    def apply(self, total: float) -> float:
+        return total
+
+class TenPercentOff(DiscountStrategy):
+    def apply(self, total: float) -> float:
+        return total * 0.9
+
+class FlatDiscount(DiscountStrategy):
+    def __init__(self, amount: float):
+        self.amount = amount
+    def apply(self, total: float) -> float:
+        return max(0, total - self.amount)
+
+# --- Cart Endpoints ---
+@app.get("/cart", response_model=dict)
+def get_cart(user_email: str):
+    if cart_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    cart = cart_collection.find_one({"user_email": user_email})
+    items = cart["items"] if cart else []
+    return {"items": items}
+
+@app.post("/cart/add", response_model=dict)
+def add_to_cart(user_email: str = Body(...), product_id: str = Body(...), quantity: int = Body(1)):
+    if cart_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    cart = cart_collection.find_one({"user_email": user_email})
+    items = cart["items"] if cart else []
+    found = False
+    for item in items:
+        if item["product_id"] == product_id:
+            item["quantity"] += quantity
+            found = True
+            break
+    if not found:
+        items.append({"product_id": product_id, "quantity": quantity})
+    cart_collection.update_one(
+        {"user_email": user_email},
+        {"$set": {"items": items}},
+        upsert=True
+    )
+    return {"message": "Added to cart", "cart": items}
+
+@app.put("/cart/update", response_model=dict)
+def update_cart(user_email: str = Body(...), product_id: str = Body(...), quantity: int = Body(...)):
+    if cart_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    cart = cart_collection.find_one({"user_email": user_email})
+    items = cart["items"] if cart else []
+    for item in items:
+        if item["product_id"] == product_id:
+            if quantity > 0:
+                item["quantity"] = quantity
+            else:
+                items.remove(item)
+            break
+    cart_collection.update_one(
+        {"user_email": user_email},
+        {"$set": {"items": items}},
+        upsert=True
+    )
+    return {"message": "Cart updated", "cart": items}
+
+@app.delete("/cart/remove", response_model=dict)
+def remove_from_cart(user_email: str = Body(...), product_id: str = Body(...)):
+    if cart_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    cart = cart_collection.find_one({"user_email": user_email})
+    items = cart["items"] if cart else []
+    items = [item for item in items if item["product_id"] != product_id]
+    cart_collection.update_one(
+        {"user_email": user_email},
+        {"$set": {"items": items}},
+        upsert=True
+    )
+    return {"message": "Removed from cart", "cart": items}
+
+@app.post("/cart/clear", response_model=dict)
+def clear_cart(user_email: str = Body(...)):
+    if cart_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    cart_collection.update_one(
+        {"user_email": user_email},
+        {"$set": {"items": []}},
+        upsert=True
+    )
+    return {"message": "Cart cleared"}
+
+@app.get("/cart/total", response_model=dict)
+def cart_total(user_email: str, discount: str = None):
+    if cart_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    cart = cart_collection.find_one({"user_email": user_email})
+    items = cart["items"] if cart else []
+    total = 0.0
+    for item in items:
+        product = products_collection.find_one({"_id": __import__('bson').ObjectId(item["product_id"])})
+        if product:
+            total += product['price'] * item['quantity']
+    strategy = get_discount_strategy(discount) if discount else None
+    if strategy:
+        total = strategy.apply(total)
+    return {"total": total}
+
+@app.get("/cart/detailed", response_model=dict)
+def get_cart_detailed(user_email: str):
+    if cart_collection is None or products_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    cart = cart_collection.find_one({"user_email": user_email})
+    items = cart["items"] if cart else []
+    detailed_items = []
+    from bson import ObjectId
+    for item in items:
+        try:
+            prod = products_collection.find_one({"_id": ObjectId(item["product_id"])})
+        except Exception:
+            prod = None
+        if prod:
+            prod["_id"] = str(prod["_id"])
+            detailed_items.append({"product": prod, "quantity": item["quantity"]})
+    return {"items": detailed_items}
+
+# --- Wishlist Endpoints ---
+@app.get("/wishlist", response_model=dict)
+def get_wishlist(user_email: str):
+    if wishlist_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    wishlist = wishlist_collection.find_one({"user_email": user_email})
+    product_ids = wishlist["product_ids"] if wishlist else []
+    return {"products": product_ids}
+
+@app.post("/wishlist/add", response_model=dict)
+def add_to_wishlist(user_email: str = Body(...), product_id: str = Body(...)):
+    if wishlist_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    wishlist = wishlist_collection.find_one({"user_email": user_email})
+    product_ids = wishlist["product_ids"] if wishlist else []
+    if product_id not in product_ids:
+        product_ids.append(product_id)
+    wishlist_collection.update_one(
+        {"user_email": user_email},
+        {"$set": {"product_ids": product_ids}},
+        upsert=True
+    )
+    return {"message": "Added to wishlist", "wishlist": product_ids}
+
+@app.delete("/wishlist/remove", response_model=dict)
+def remove_from_wishlist(user_email: str = Body(...), product_id: str = Body(...)):
+    if wishlist_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    wishlist = wishlist_collection.find_one({"user_email": user_email})
+    product_ids = wishlist["product_ids"] if wishlist else []
+    product_ids = [pid for pid in product_ids if pid != product_id]
+    wishlist_collection.update_one(
+        {"user_email": user_email},
+        {"$set": {"product_ids": product_ids}},
+        upsert=True
+    )
+    return {"message": "Removed from wishlist", "wishlist": product_ids}
+
+@app.post("/wishlist/clear", response_model=dict)
+def clear_wishlist(user_email: str = Body(...)):
+    if wishlist_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    wishlist_collection.update_one(
+        {"user_email": user_email},
+        {"$set": {"product_ids": []}},
+        upsert=True
+    )
+    return {"message": "Wishlist cleared"}
+
+@app.get("/wishlist/detailed", response_model=dict)
+def get_wishlist_detailed(user_email: str):
+    if wishlist_collection is None or products_collection is None:
+        raise HTTPException(status_code=500, detail="Database connection failed")
+    wishlist = wishlist_collection.find_one({"user_email": user_email})
+    product_ids = wishlist["product_ids"] if wishlist else []
+    from bson import ObjectId
+    products = []
+    for pid in product_ids:
+        try:
+            prod = products_collection.find_one({"_id": ObjectId(pid)})
+        except Exception:
+            prod = None
+        if prod:
+            prod["_id"] = str(prod["_id"])
+            products.append(prod)
+    return {"products": products}
+
+
 @app.get("/")
 def read_root():
     return {"message": "FastAPI Backend with MongoDB is running!"}
@@ -228,7 +438,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     
     user = users_collection.find_one({"email": form_data.username})
     
-    if not user or not verify_password(form_data.password, user["hashed_password"]):
+    if not user or not verify_password(form_data.password, product["hashed_password"]):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     
     access_token = create_access_token(data={"sub": user["email"]})
